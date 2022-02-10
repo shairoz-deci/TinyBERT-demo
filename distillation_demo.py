@@ -1,13 +1,11 @@
 from transformer.modeling import TinyBertForSequenceClassification
-from transformer.tokenization import BertTokenizer
 from transformer.optimization import BertAdam
-from transformer.file_utils import WEIGHTS_NAME, CONFIG_NAME
 import argparse
 import torch
 from torch.nn import MSELoss
-from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
-                              TensorDataset)
+from torch.utils.data import DataLoader, RandomSampler
 from tqdm import tqdm
+
 
 def main():
     parser = argparse.ArgumentParser()
