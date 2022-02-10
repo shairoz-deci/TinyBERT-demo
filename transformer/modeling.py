@@ -137,26 +137,21 @@ def swish(x):
     return x * torch.sigmoid(x)
 
 
-try:
-    from apex.normalization.fused_layer_norm import FusedLayerNorm as BertLayerNorm
-except ImportError:
-    logger.info(
-        "Better speed can be achieved with apex installed from https://www.github.com/nvidia/apex .")
 
-    class BertLayerNorm(nn.Module):
-        def __init__(self, hidden_size, eps=1e-12):
-            """Construct a layernorm module in the TF style (epsilon inside the square root).
-            """
-            super(BertLayerNorm, self).__init__()
-            self.weight = nn.Parameter(torch.ones(hidden_size))
-            self.bias = nn.Parameter(torch.zeros(hidden_size))
-            self.variance_epsilon = eps
+class BertLayerNorm(nn.Module):
+    def __init__(self, hidden_size, eps=1e-12):
+        """Construct a layernorm module in the TF style (epsilon inside the square root).
+        """
+        super(BertLayerNorm, self).__init__()
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.bias = nn.Parameter(torch.zeros(hidden_size))
+        self.variance_epsilon = eps
 
-        def forward(self, x):
-            u = x.mean(-1, keepdim=True)
-            s = (x - u).pow(2).mean(-1, keepdim=True)
-            x = (x - u) / torch.sqrt(s + self.variance_epsilon)
-            return self.weight * x + self.bias
+    def forward(self, x):
+        u = x.mean(-1, keepdim=True)
+        s = (x - u).pow(2).mean(-1, keepdim=True)
+        x = (x - u) / torch.sqrt(s + self.variance_epsilon)
+        return self.weight * x + self.bias
 
 
 class HeadAttention(nn.Module):
@@ -1117,17 +1112,19 @@ class BertForSentencePairClassification(BertPreTrainedModel):
 
 
 class TinyBertForSequenceClassification(BertPreTrainedModel):
-    def __init__(self, config, num_labels, fit_size=768):
+    def __init__(self, config, num_labels, is_student, fit_size=768):
         super(TinyBertForSequenceClassification, self).__init__(config)
+        self.is_student = is_student
         self.num_labels = num_labels
+        self.hidden_size = config.hidden_size
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, num_labels)
-        self.fit_dense = nn.Linear(config.hidden_size, fit_size)
+        self.classifier = nn.Linear(self.hidden_size, num_labels)
+        if self.is_student:
+            self.fit_dense = nn.Linear(self.hidden_size, fit_size)
         self.apply(self.init_bert_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None,
-                labels=None, is_student=False):
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None):
 
         sequence_output, att_output, pooled_output = self.bert(input_ids, token_type_ids, attention_mask,
                                                                output_all_encoded_layers=True, output_att=True)
@@ -1135,7 +1132,7 @@ class TinyBertForSequenceClassification(BertPreTrainedModel):
         logits = self.classifier(torch.relu(pooled_output))
 
         tmp = []
-        if is_student:
+        if self.is_student:
             for s_id, sequence_layer in enumerate(sequence_output):
                 tmp.append(self.fit_dense(sequence_layer))
             sequence_output = tmp
